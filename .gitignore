@@ -1,2 +1,6 @@
 .fastembed_cache
 target
+
+# Test projects
+node_modules
+test-projects/c-cpp/build/

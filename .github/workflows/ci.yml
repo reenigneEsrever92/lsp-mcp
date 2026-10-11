@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The adapter only reads the repository, so the default token needs no more.
+permissions:
+  contents: read
+
+# A new push to a branch or PR supersedes an in-flight run for it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `language_servers.rs` skips a project when its real server is not on
+      # `PATH`, so the suite stays green on a runner with none installed.
+      - run: cargo test --all-targets --locked
+
+  language-servers:
+    name: Language servers (end-to-end)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-analyzer
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install clangd
+        run: sudo apt-get update && sudo apt-get install -y clangd
+
+      - name: Install gopls
+        run: |
+          go install golang.org/x/tools/gopls@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install typescript-language-server
+        run: |
+          npm install --global typescript typescript-language-server
+          npm install --prefix test-projects/typescript
+
+      # Drives each `test-projects/` sample against its real server. Anything
+      # that could not be installed above is skipped with a printed notice
+      # rather than failing the job.
+      - name: Run the end-to-end language-server tests
+        run: cargo test --test language_servers --locked -- --nocapture --test-threads=1

@@ -595,7 +595,7 @@ mod tests {
         let uri: Uri = "file:///tmp/x.rs".parse().unwrap();
         let range = Range::new(Position::new(1, 2), Position::new(1, 2));
         let diagnostic = Diagnostic {
-            range: range.clone(),
+            range,
             message: "boom".to_string(),
             ..Default::default()
         };

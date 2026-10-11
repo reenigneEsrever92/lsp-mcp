@@ -211,8 +211,14 @@ mod tests {
         let mut bytes = frame(r#"{"a":1}"#);
         bytes.extend_from_slice(&frame(r#"{"b":2}"#));
         let mut reader = Trickle::new(bytes, 3);
-        assert_eq!(read_frame(&mut reader).await.unwrap().unwrap(), br#"{"a":1}"#);
-        assert_eq!(read_frame(&mut reader).await.unwrap().unwrap(), br#"{"b":2}"#);
+        assert_eq!(
+            read_frame(&mut reader).await.unwrap().unwrap(),
+            br#"{"a":1}"#
+        );
+        assert_eq!(
+            read_frame(&mut reader).await.unwrap().unwrap(),
+            br#"{"b":2}"#
+        );
         assert!(read_frame(&mut reader).await.unwrap().is_none());
     }
 

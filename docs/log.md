@@ -5,6 +5,21 @@ prepended under their own `## YYYY-MM-DD` heading.
 
 ## 2026-10-11
 
+- **Architecture**: Documented the real-server test surface in
+  [`architecture.md`](architecture.md) — the `test-projects/` sample projects
+  (C/C++, TypeScript/JavaScript, Rust, Go) and the `tests/language_servers.rs`
+  integration test that drives the adapter against their real language servers
+  when installed, plus the shared `tests/common/mod.rs` `McpClient` harness.
+- **Architecture**: Updated [`architecture.md`](architecture.md) to describe the
+  `diagnostics` tool's merged pull ∪ push behaviour and its `mechanism`
+  (`"pull"`/`"publish"`/`"pull+publish"`) values, and added a pointer from the
+  historical decision in
+  [Read/explore tools](dev/backlog/read-explore-tools.md) to
+  [Merge pushed diagnostics with pulled ones](dev/backlog/merge-pushed-diagnostics.md).
+- **Backlog**: Added a proposed improvement,
+  [Merge pushed diagnostics with pulled ones](dev/backlog/merge-pushed-diagnostics.md),
+  to merge pull and push diagnostics in the `diagnostics` tool so check/clippy
+  lints are not dropped.
 - **Reconciliation**: Reconciled the concept documents with the implemented
   adapter — fixed a dangling `requirements.md` link in
   [`architecture.md`](architecture.md), documented the `verified` change-request

@@ -77,7 +77,10 @@ mod tests {
     #[test]
     fn framing_error_is_rendered() {
         let err = Error::Framing("missing Content-Length header".to_string());
-        assert_eq!(err.to_string(), "framing error: missing Content-Length header");
+        assert_eq!(
+            err.to_string(),
+            "framing error: missing Content-Length header"
+        );
     }
 
     #[test]
@@ -100,7 +103,10 @@ mod tests {
             code: -32601,
             message: "method not found".to_string(),
         };
-        assert_eq!(err.to_string(), "LSP error response -32601: method not found");
+        assert_eq!(
+            err.to_string(),
+            "LSP error response -32601: method not found"
+        );
     }
 
     #[test]

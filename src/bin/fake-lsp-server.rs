@@ -38,6 +38,11 @@ enum Mode {
     Default,
     /// Advertise everything except pull diagnostics; push on `didOpen`.
     Push,
+    /// Advertise everything including pull diagnostics, but answer pull with an
+    /// empty report and push a report on `didOpen`. This mirrors the split a
+    /// real server (e.g. rust-analyzer) shows between the native diagnostics it
+    /// answers pull with and the `cargo check`/clippy diagnostics it only pushes.
+    PullAndPush,
     /// Advertise none of the read capabilities.
     None,
 }
@@ -46,6 +51,7 @@ impl Mode {
     fn from_args() -> Self {
         match std::env::args().nth(1).as_deref() {
             Some("push") => Mode::Push,
+            Some("pull-and-push") => Mode::PullAndPush,
             Some("none") => Mode::None,
             _ => Mode::Default,
         }
@@ -314,17 +320,26 @@ impl Server {
             (Some("shutdown"), Some(id)) => {
                 write_value(writer, &json!({"jsonrpc": "2.0", "id": id, "result": null}))
             }
-            (Some("textDocument/didOpen"), None) if self.mode == Mode::Push => {
+            (Some("textDocument/didOpen"), None)
+                if matches!(self.mode, Mode::Push | Mode::PullAndPush) =>
+            {
                 let uri = self
                     .last_uri
                     .clone()
                     .unwrap_or_else(|| "file:///unknown".to_string());
+                // `PullAndPush` also pushes a check-only diagnostic, so a merge
+                // can be told apart from a plain pull.
+                let diagnostics = if self.mode == Mode::PullAndPush {
+                    json!([self.diagnostic(), self.check_diagnostic()])
+                } else {
+                    json!([self.diagnostic()])
+                };
                 write_value(
                     writer,
                     &json!({
                         "jsonrpc": "2.0",
                         "method": "textDocument/publishDiagnostics",
-                        "params": {"uri": uri, "diagnostics": [self.diagnostic()]}
+                        "params": {"uri": uri, "diagnostics": diagnostics}
                     }),
                 );
             }
@@ -362,7 +377,7 @@ impl Server {
             "documentRangeFormattingProvider": true,
             "textDocumentSync": 1
         });
-        if self.mode == Mode::Default {
+        if matches!(self.mode, Mode::Default | Mode::PullAndPush) {
             capabilities["diagnosticProvider"] = json!({
                 "interFileDependencies": false,
                 "workspaceDiagnostics": false
@@ -457,7 +472,8 @@ impl Server {
         })
     }
 
-    /// A single canned diagnostic.
+    /// A single canned diagnostic, the native one; a server that both answers
+    /// pull and pushes returns it on both channels.
     fn diagnostic(&self) -> Value {
         json!({
             "range": {
@@ -468,6 +484,21 @@ impl Server {
             "code": "E0001",
             "source": "fake",
             "message": "unused variable"
+        })
+    }
+
+    /// A single canned check (clippy-style) diagnostic, distinct from the native
+    /// one and delivered only by push.
+    fn check_diagnostic(&self) -> Value {
+        json!({
+            "range": {
+                "start": {"line": 0, "character": 4},
+                "end": {"line": 0, "character": 10}
+            },
+            "severity": 2,
+            "code": "clippy::mutable_key_type",
+            "source": "clippy",
+            "message": "mutable key type"
         })
     }
 }

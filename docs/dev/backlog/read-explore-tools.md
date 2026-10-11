@@ -156,6 +156,13 @@ otherwise it reads the push cache. Both are file-scoped, matching this CR's
 scope). No capability is reported as "missing" for push, because push is always
 allowed; instead, when no pushed report has arrived the tool says so clearly.
 
+> **Superseded in part.** A later improvement,
+> [Merge pushed diagnostics with pulled ones](merge-pushed-diagnostics.md), made the
+> pull path also read the push cache and return their de-duplicated union, so a
+> server that splits native (pull) and `cargo check`/clippy (push) diagnostics is
+> no longer under-reported. The capability gate and the push-only fallback above
+> still hold; only the "choose one channel" wording is superseded.
+
 **Capturing pushed diagnostics.** A new `src/diagnostics.rs` holds
 `DiagnosticsCache`, a small background consumer:
 

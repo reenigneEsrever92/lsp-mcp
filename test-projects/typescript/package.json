@@ -1,0 +1,14 @@
+{
+  "name": "greeter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript/JavaScript test project for lsp-mcp.",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "typescript-language-server": "^4.3.0"
+  }
+}

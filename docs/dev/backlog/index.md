@@ -29,10 +29,11 @@ Each change request carries a `kind` and a `state`.
 
 ## Requests
 
-| Request                                                                      | Kind    | Priority | State |
-| ---------------------------------------------------------------------------- | ------- | -------- | ----- |
-| [Adapter core, CLI, and LSP client transport](adapter-core-lsp-transport.md) | feature | high     | done  |
-| [MCP stdio server and tool surface](mcp-stdio-server.md)                     | feature | high     | done  |
-| [Read/explore tools](read-explore-tools.md)                                  | feature | high     | done  |
-| [Code-action tools](code-action-tools.md)                                    | feature | medium   | done  |
-| [Write tools: rename and format](write-tools-rename-format.md)               | feature | medium   | done  |
+| Request                                                                      | Kind        | Priority | State    |
+| ---------------------------------------------------------------------------- | ----------- | -------- | -------- |
+| [Adapter core, CLI, and LSP client transport](adapter-core-lsp-transport.md) | feature     | high     | done     |
+| [MCP stdio server and tool surface](mcp-stdio-server.md)                     | feature     | high     | done     |
+| [Read/explore tools](read-explore-tools.md)                                  | feature     | high     | done     |
+| [Code-action tools](code-action-tools.md)                                    | feature     | medium   | done     |
+| [Write tools: rename and format](write-tools-rename-format.md)               | feature     | medium   | done     |
+| [Merge pushed diagnostics with pulled ones](merge-pushed-diagnostics.md)     | improvement | medium   | proposed |

@@ -142,6 +142,17 @@ The integration tests spawn a test-only `fake-lsp-server` binary
 (`src/bin/fake-lsp-server.rs`) in place of a real language server, so the whole
 adapter can be exercised without installing one.
 
+### Test projects
+
+[`test-projects/`](test-projects/README.md) holds small sample projects for
+**C/C++**, **TypeScript/JavaScript**, **Rust**, and **Go**. Point `lsp-mcp` at
+the relevant real language server (`clangd`, `typescript-language-server`,
+`rust-analyzer`, or `gopls`) from inside one of these projects to try the tools
+end-to-end — each has cross-file references, documented symbols, and one
+deliberate diagnostic. `cargo test --test language_servers` does the same
+automatically: it drives each project against its server when the server is
+installed and skips the ones that are not.
+
 ## License
 
 Licensed under the MIT License.

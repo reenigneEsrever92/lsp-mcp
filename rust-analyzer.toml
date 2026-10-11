@@ -1,0 +1,4 @@
+# Run `cargo clippy` instead of `cargo check` so clippy lints surface through
+# rust-analyzer's diagnostics (e.g. textDocument/diagnostic).
+[check]
+command = "clippy"

@@ -98,10 +98,10 @@ impl LspServer {
         crate::tools::workspace_symbol::run(Arc::clone(&self.app), args).await
     }
 
-    /// Report a file's diagnostics (pull or push).
+    /// Report a file's diagnostics, merging pull and push.
     #[tool(
         name = "diagnostics",
-        description = "Report a file's diagnostics, preferring the pull mechanism (textDocument/diagnostic) when the server supports it and otherwise reading pushed textDocument/publishDiagnostics reports. Returns each diagnostic's severity, code, source, message, 1-based position, surrounding code context, the mechanism used, and the raw LSP payload."
+        description = "Report a file's diagnostics, merging both LSP channels: when the server supports pull diagnostics (textDocument/diagnostic) it requests them and also reads pushed textDocument/publishDiagnostics reports, returning their de-duplicated union, and otherwise it reads the pushed reports alone. Returns each diagnostic's severity, code, source, message, 1-based position, surrounding code context, the mechanism(s) that contributed (\"pull\", \"publish\", or \"pull+publish\"), and the raw LSP payload."
     )]
     async fn diagnostics(
         &self,
@@ -163,7 +163,7 @@ impl LspServer {
 impl ServerHandler for LspServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Inspect and modify a language server's view of a codebase. Read/explore tools: `definition` locates a symbol's definition; `references` lists references to a symbol; `hover` shows a symbol's type, signature, and documentation; `documentSymbol` lists a file's symbols; `workspaceSymbol` searches the workspace for symbols; `diagnostics` reports a file's diagnostics (pull or push). Act tools: `codeAction` lists the code actions available at a position, and `applyCodeAction` applies a chosen one (identified by its `index`), writing any resulting edits to disk and/or running its command. Write tools: `rename` renames the symbol at a position everywhere it is used via textDocument/prepareRename then textDocument/rename, and `format` formats a whole file or a range. Position-based tools take a file and a 1-based line and column.",
+            "Inspect and modify a language server's view of a codebase. Read/explore tools: `definition` locates a symbol's definition; `references` lists references to a symbol; `hover` shows a symbol's type, signature, and documentation; `documentSymbol` lists a file's symbols; `workspaceSymbol` searches the workspace for symbols; `diagnostics` reports a file's diagnostics (merged pull and push). Act tools: `codeAction` lists the code actions available at a position, and `applyCodeAction` applies a chosen one (identified by its `index`), writing any resulting edits to disk and/or running its command. Write tools: `rename` renames the symbol at a position everywhere it is used via textDocument/prepareRename then textDocument/rename, and `format` formats a whole file or a range. Position-based tools take a file and a 1-based line and column.",
         )
     }
 }

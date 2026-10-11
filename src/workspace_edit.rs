@@ -348,6 +348,7 @@ fn position_to_offset(text: &str, position: Position) -> Result<usize> {
 }
 
 #[cfg(test)]
+#[allow(clippy::mutable_key_type)] // `Uri` keys carry interior mutability, which is inherent to the LSP protocol.
 mod tests {
     use super::*;
     use lsp_types::AnnotatedTextEdit;
@@ -360,10 +361,7 @@ mod tests {
     /// A unique temp-file path (not yet created).
     fn temp_path(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "lsp-mcp-we-{tag}-{}-{n}.txt",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("lsp-mcp-we-{tag}-{}-{n}.txt", std::process::id()))
     }
 
     fn write_file(path: &std::path::Path, text: &str) {
@@ -387,10 +385,7 @@ mod tests {
         write_file(&path, "fn main() {\n    let x = 1;\n}\n");
 
         let mut changes = HashMap::new();
-        changes.insert(
-            uri(&path),
-            vec![edit((1, 4), (1, 9), "let answer")],
-        );
+        changes.insert(uri(&path), vec![edit((1, 4), (1, 9), "let answer")]);
         let applied = apply(&WorkspaceEdit {
             changes: Some(changes),
             ..Default::default()
@@ -547,7 +542,10 @@ mod tests {
         assert!(!created.exists());
         assert!(!renamed.exists());
         assert_eq!(applied.files_created, vec![created.clone()]);
-        assert_eq!(applied.files_renamed, vec![created.clone(), renamed.clone()]);
+        assert_eq!(
+            applied.files_renamed,
+            vec![created.clone(), renamed.clone()]
+        );
         assert_eq!(applied.files_deleted, vec![renamed.clone()]);
 
         // The parent directory was created for the file.
@@ -610,10 +608,7 @@ mod tests {
             ..Default::default()
         })
         .unwrap_err();
-        assert!(
-            error.to_string().contains("past the end"),
-            "got: {error}"
-        );
+        assert!(error.to_string().contains("past the end"), "got: {error}");
         let _ = std::fs::remove_file(&path);
     }
 

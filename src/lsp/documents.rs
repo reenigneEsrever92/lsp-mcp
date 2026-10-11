@@ -61,7 +61,8 @@ impl Documents {
                 if document.text != text {
                     document.version += 1;
                     document.text = text.to_string();
-                    let params = message::did_change_params(&uri, document.version, text.to_string());
+                    let params =
+                        message::did_change_params(&uri, document.version, text.to_string());
                     client.notify(methods::DID_CHANGE, Some(serde_json::to_value(params)?))?;
                 }
                 Ok(())
@@ -168,7 +169,9 @@ mod tests {
         let mut documents = Documents::new();
         let path = Path::new("/tmp/lsp-mcp-tests/doc.rs");
 
-        documents.ensure_open(&client, path, "fn main() {}").unwrap();
+        documents
+            .ensure_open(&client, path, "fn main() {}")
+            .unwrap();
 
         let uri = path_to_uri(path).unwrap();
         assert!(documents.is_open(&uri));
@@ -178,7 +181,10 @@ mod tests {
         assert_eq!(notification["method"], "textDocument/didOpen");
         assert_eq!(notification["params"]["textDocument"]["languageId"], "rust");
         assert_eq!(notification["params"]["textDocument"]["version"], 1);
-        assert_eq!(notification["params"]["textDocument"]["text"], "fn main() {}");
+        assert_eq!(
+            notification["params"]["textDocument"]["text"],
+            "fn main() {}"
+        );
     }
 
     #[tokio::test]

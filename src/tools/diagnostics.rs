@@ -1,19 +1,25 @@
-//! The `diagnostics` tool: pull (`textDocument/diagnostic`) or push
-//! (`textDocument/publishDiagnostics`), shaped for an agent.
+//! The `diagnostics` tool: the union of pull (`textDocument/diagnostic`) and
+//! push (`textDocument/publishDiagnostics`), shaped for an agent.
 //!
-//! It prefers **pull** when the server advertises `diagnosticProvider`: it sends
-//! one `textDocument/diagnostic` request and decodes the report synchronously.
-//! Otherwise it reads the **push** cache: it records the URI's current revision,
-//! opens the document (a server that publishes on `didOpen` emits a fresh
-//! report), awaits a newer revision under a bounded timeout, and falls back to
-//! whatever was already cached. When nothing has arrived it says so plainly.
-//! Both paths return a [`DiagnosticView`] per diagnostic with the file's URI,
-//! 1-based range, surrounding code context, and the raw LSP payload.
+//! When the server advertises `diagnosticProvider` it **merges** the two
+//! channels: it sends one `textDocument/diagnostic` request and decodes the
+//! report synchronously, and it also reads the **push** cache — recording the
+//! URI's current revision, opening the document (a server that publishes on
+//! `didOpen` emits a fresh report), awaiting a newer revision under a bounded
+//! timeout, and falling back to whatever was already cached — then returns the
+//! union, de-duplicated. Servers such as rust-analyzer answer pull with only
+//! their native diagnostics while delivering `cargo check`/clippy output solely
+//! through push, so choosing one channel would under-report. When the server does
+//! not advertise pull, it reads the push cache alone and says so plainly when
+//! nothing has arrived. Both paths return a [`DiagnosticView`] per diagnostic with
+//! the file's URI, 1-based range, surrounding code context, and the raw LSP
+//! payload, and name the channels that contributed through the `mechanism` field.
 //!
 //! The file's diagnostics are retrieved through [`file_diagnostics`], a
 //! `pub(crate)` helper shared with the code-action tool's diagnostic scoping, so
 //! there is one source of truth for the pull/push logic.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,18 +79,21 @@ pub(crate) struct FileDiagnostics {
     pub uri: Uri,
     /// The document text, for rendering code context without a second read.
     pub text: String,
-    /// The decoded diagnostics.
+    /// The decoded diagnostics, merged across the channels that contributed.
     pub diagnostics: Vec<Diagnostic>,
     /// The raw LSP payload.
     pub raw: Value,
     /// A note to render in place of the summary, when there is one (e.g. an
     /// unchanged pull report).
     pub note: Option<String>,
+    /// The channels whose diagnostics are present in the result: `"pull"`,
+    /// `"publish"`, or `"pull+publish"`.
+    pub mechanism: String,
 }
 
-/// Retrieve `path`'s diagnostics: pull when the server advertises
-/// `diagnosticProvider`, otherwise the push cache. Shared with the code-action
-/// tool so both read diagnostics the same way.
+/// Retrieve `path`'s diagnostics: when the server advertises `diagnosticProvider`,
+/// the union of the pull report and the push cache; otherwise the push cache
+/// alone. Shared with the code-action tool so both read diagnostics the same way.
 pub(crate) async fn file_diagnostics(
     app: &App,
     path: &Path,
@@ -110,13 +119,8 @@ pub async fn run(app: Arc<App>, args: FileArgs) -> Result<CallToolResult, ErrorD
 async fn diagnostics_impl(app: &App, args: &FileArgs) -> Result<CallToolResult, CallToolResult> {
     let path = PathBuf::from(&args.file);
     let retrieved = file_diagnostics(app, &path).await?;
-    let mechanism = if app.supports_pull_diagnostics() {
-        "pull"
-    } else {
-        "publish"
-    };
     finish(
-        mechanism,
+        &retrieved.mechanism,
         &retrieved.uri,
         &retrieved.text,
         retrieved.diagnostics,
@@ -125,13 +129,33 @@ async fn diagnostics_impl(app: &App, args: &FileArgs) -> Result<CallToolResult, 
     )
 }
 
-/// Read diagnostics by pulling `textDocument/diagnostic`.
+/// Read diagnostics by pulling `textDocument/diagnostic` and merging in any
+/// pushed report, de-duplicated.
 async fn pull(app: &App, path: &Path, uri: &Uri) -> Result<FileDiagnostics, CallToolResult> {
+    let key = uri.as_str();
+    // Capture the push baseline before opening the document, so a report
+    // published in response to the `didOpen` counts as fresh.
+    let baseline = app
+        .diagnostics()
+        .get(key)
+        .await
+        .map(|entry| entry.revision)
+        .unwrap_or(0);
+    let wait = if baseline > 0 {
+        PUSH_WAIT_CACHED
+    } else {
+        PUSH_WAIT
+    };
+
+    // Opening the document validates the pull request and lets a server that
+    // publishes on `didOpen` emit a fresh report, and gives us the text to render
+    // context against.
     let text = app
         .open_document(path)
         .await
         .map_err(|error| error_from(&error))?;
 
+    // Pull — the synchronous backbone.
     let params = message::document_diagnostic_params(uri);
     let params = serde_json::to_value(params)
         .map_err(|error| error_result(format!("failed to encode the request: {error}")))?;
@@ -143,14 +167,35 @@ async fn pull(app: &App, path: &Path, uri: &Uri) -> Result<FileDiagnostics, Call
 
     let result: DocumentDiagnosticReportResult = serde_json::from_value(raw.clone())
         .map_err(|error| error_result(format!("unexpected diagnostic response: {error}")))?;
+    let (pulled, note) = decode_pull_report(result);
 
-    let (diagnostics, note) = decode_pull_report(result);
+    // Push — read the cache, awaiting a report newer than the baseline exactly as
+    // the push-only path does, and fall back to whatever is already cached. A
+    // server that never pushes leaves this empty.
+    let pushed = match app.diagnostics().await_newer(key, baseline, wait).await {
+        Some(fresh) => fresh.diagnostics,
+        None => app
+            .diagnostics()
+            .get(key)
+            .await
+            .map(|entry| entry.diagnostics)
+            .unwrap_or_default(),
+    };
+
+    let pulled_present = !pulled.is_empty();
+    let (diagnostics, pushed_present) = merge_diagnostics(pulled, pushed);
+    let mechanism = merged_mechanism(pulled_present, pushed_present).to_string();
+    // An unchanged-report note would otherwise replace the rendered summary;
+    // keep it only when the merged result is empty.
+    let note = if diagnostics.is_empty() { note } else { None };
+
     Ok(FileDiagnostics {
         uri: uri.clone(),
         text,
         diagnostics,
         raw,
         note,
+        mechanism,
     })
 }
 
@@ -202,7 +247,71 @@ async fn push(app: &App, path: &Path, uri: &Uri) -> Result<FileDiagnostics, Call
         diagnostics: entry.diagnostics,
         raw,
         note: None,
+        mechanism: "publish".to_string(),
     })
+}
+
+/// Merge pulled and pushed diagnostics into one de-duplicated list.
+///
+/// The pulled set comes first; a pushed diagnostic is kept only when it is not
+/// already present (or already seen among the pushed ones). Returns the merged
+/// list and whether any pushed diagnostic was retained (i.e. the push channel
+/// contributed to the result).
+fn merge_diagnostics(pulled: Vec<Diagnostic>, pushed: Vec<Diagnostic>) -> (Vec<Diagnostic>, bool) {
+    let mut seen: HashSet<DiagnosticKey> = HashSet::new();
+    let mut merged: Vec<Diagnostic> = Vec::new();
+    for diagnostic in pulled {
+        if seen.insert(DiagnosticKey::of(&diagnostic)) {
+            merged.push(diagnostic);
+        }
+    }
+    let mut pushed_present = false;
+    for diagnostic in pushed {
+        if seen.insert(DiagnosticKey::of(&diagnostic)) {
+            merged.push(diagnostic);
+            pushed_present = true;
+        }
+    }
+    (merged, pushed_present)
+}
+
+/// The `mechanism` value for a merged pull result: which channels' diagnostics are
+/// present in it.
+fn merged_mechanism(pulled_present: bool, pushed_present: bool) -> &'static str {
+    match (pulled_present, pushed_present) {
+        (true, true) => "pull+publish",
+        (_, true) => "publish",
+        _ => "pull",
+    }
+}
+
+/// A diagnostic's identity for de-duplication: range, severity, code, source, and
+/// message. Two diagnostics with the same key are the same report.
+#[derive(PartialEq, Eq, Hash)]
+struct DiagnosticKey {
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+    severity: Option<String>,
+    code: Option<String>,
+    source: Option<String>,
+    message: String,
+}
+
+impl DiagnosticKey {
+    fn of(diagnostic: &Diagnostic) -> Self {
+        Self {
+            start_line: diagnostic.range.start.line,
+            start_character: diagnostic.range.start.character,
+            end_line: diagnostic.range.end.line,
+            end_character: diagnostic.range.end.character,
+            severity: diagnostic.severity.map(render_severity),
+            code: diagnostic.code.clone().map(render_code),
+            source: diagnostic.source.clone(),
+            message: diagnostic.message.clone(),
+        }
+    }
 }
 
 /// Decode a pull report into its diagnostics and an optional note.
@@ -369,5 +478,108 @@ mod tests {
             "got: {}",
             view.location.context
         );
+    }
+
+    fn diagnostic(
+        message: &str,
+        line: u32,
+        severity: lsp_types::DiagnosticSeverity,
+        source: &str,
+    ) -> Diagnostic {
+        Diagnostic {
+            range: lsp_types::Range::new(
+                lsp_types::Position::new(line, 0),
+                lsp_types::Position::new(line, 3),
+            ),
+            severity: Some(severity),
+            code: Some(NumberOrString::String("E0001".to_string())),
+            source: Some(source.to_string()),
+            message: message.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dedupes_a_diagnostic_present_on_both_channels() {
+        let native =
+            |message: &str| diagnostic(message, 1, lsp_types::DiagnosticSeverity::ERROR, "fake");
+        let (merged, pushed_present) = merge_diagnostics(
+            vec![native("unused variable")],
+            vec![
+                native("unused variable"),
+                diagnostic(
+                    "mutable key type",
+                    0,
+                    lsp_types::DiagnosticSeverity::WARNING,
+                    "clippy",
+                ),
+            ],
+        );
+
+        assert_eq!(merged.len(), 2, "the native report must not be duplicated");
+        assert!(pushed_present, "the push-only report must contribute");
+        let messages: Vec<&str> = merged.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(messages, vec!["unused variable", "mutable key type"]);
+    }
+
+    #[test]
+    fn keeps_a_push_only_diagnostic_when_pull_is_empty() {
+        let (merged, pushed_present) = merge_diagnostics(
+            Vec::new(),
+            vec![diagnostic(
+                "mutable key type",
+                0,
+                lsp_types::DiagnosticSeverity::WARNING,
+                "clippy",
+            )],
+        );
+        assert_eq!(merged.len(), 1);
+        assert!(pushed_present);
+    }
+
+    #[test]
+    fn reports_no_push_contribution_when_it_only_repeats_pull() {
+        let native = || {
+            diagnostic(
+                "unused variable",
+                1,
+                lsp_types::DiagnosticSeverity::ERROR,
+                "fake",
+            )
+        };
+        let (merged, pushed_present) = merge_diagnostics(vec![native()], vec![native()]);
+        assert_eq!(merged.len(), 1);
+        assert!(
+            !pushed_present,
+            "a push report that only repeats pull does not contribute"
+        );
+    }
+
+    #[test]
+    fn keeps_distinct_reports_that_share_a_message() {
+        let (merged, pushed_present) = merge_diagnostics(
+            vec![diagnostic(
+                "same message",
+                1,
+                lsp_types::DiagnosticSeverity::ERROR,
+                "fake",
+            )],
+            vec![diagnostic(
+                "same message",
+                2,
+                lsp_types::DiagnosticSeverity::ERROR,
+                "fake",
+            )],
+        );
+        assert_eq!(merged.len(), 2, "ranges differ, so both are kept");
+        assert!(pushed_present);
+    }
+
+    #[test]
+    fn names_the_contributing_channels() {
+        assert_eq!(merged_mechanism(true, false), "pull");
+        assert_eq!(merged_mechanism(false, true), "publish");
+        assert_eq!(merged_mechanism(true, true), "pull+publish");
+        assert_eq!(merged_mechanism(false, false), "pull");
     }
 }

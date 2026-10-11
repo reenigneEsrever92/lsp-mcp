@@ -12,6 +12,8 @@ Shipped changes are listed newest first under dated headings.
 
 ## 2026-10-11
 
+- **Merge pushed diagnostics with pulled ones** — the `diagnostics` tool now returns the de-duplicated union of the pull report (`textDocument/diagnostic`) and the push cache (`textDocument/publishDiagnostics`), reporting `mechanism` as `"pull"`, `"publish"`, or `"pull+publish"` from the channels that contributed. See
+  [Merge pushed diagnostics with pulled ones](backlog/merge-pushed-diagnostics.md).
 - **Write tools: rename and format** — the adapter now registers `rename` (rename the symbol at a 1-based position everywhere it is used via `textDocument/prepareRename` then `textDocument/rename`) and `format` (format a whole file via `textDocument/formatting` or a 1-based range via `textDocument/rangeFormatting`), both applying their edits to disk and reporting the files changed. See
   [Write tools: rename and format](backlog/write-tools-rename-format.md).
 - **Code-action tools** — the adapter now registers `codeAction` (list the actions at a position via `textDocument/codeAction`) and `applyCodeAction` (resolve a chosen action via `codeAction/resolve` and apply its `WorkspaceEdit` to disk, or run its command via `workspace/executeCommand`). See

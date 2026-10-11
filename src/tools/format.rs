@@ -102,7 +102,7 @@ async fn format_impl(app: &App, args: &FormatArgs) -> Result<CallToolResult, Cal
     let (edits, range, raw) = match &args.range {
         Some(requested) => {
             let validated = validate_range(requested, &text).map_err(error_result)?;
-            let params = message::document_range_formatting_params(&uri, validated.clone());
+            let params = message::document_range_formatting_params(&uri, validated);
             let params = serde_json::to_value(params)
                 .map_err(|error| error_result(format!("failed to encode the request: {error}")))?;
             let raw = app

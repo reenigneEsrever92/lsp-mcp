@@ -42,7 +42,7 @@ shared `App`. Nothing under `lsp/` knows about MCP.
 | `src/tools/hover.rs`             | The `hover` tool: a `textDocument/hover` request, rendering `HoverContents` and the optional range.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `src/tools/document_symbol.rs`   | The `documentSymbol` tool: a `textDocument/documentSymbol` request, decoding both response shapes into symbol views.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `src/tools/workspace_symbol.rs`  | The `workspaceSymbol` tool: a `workspace/symbol` request, reading each symbol's file on demand for context.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `src/tools/diagnostics.rs`       | The `diagnostics` tool: a `textDocument/diagnostic` pull request when advertised, otherwise the push cache. Exposes the shared `file_diagnostics` helper the code-action tool reuses.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `src/tools/diagnostics.rs`       | The `diagnostics` tool: the union of a `textDocument/diagnostic` pull request and the push cache when pull is advertised, otherwise the push cache alone. Exposes the shared `file_diagnostics` helper the code-action tool reuses.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `src/tools/code_action.rs`       | The `codeAction` list tool: a `textDocument/codeAction` request shaped into indexed action views, gated on `codeActionProvider`. Its `list_actions` fetch is reused by the apply tool.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `src/tools/apply_code_action.rs` | The `applyCodeAction` write tool: re-lists, selects by index, resolves via `codeAction/resolve`, and applies a `WorkspaceEdit` through `workspace_edit` and/or a `Command` through `workspace/executeCommand`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `src/tools/rename.rs`            | The `rename` write tool: `textDocument/prepareRename` then `textDocument/rename`, applying the returned `WorkspaceEdit` through `workspace_edit`, gated on `renameProvider`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -52,11 +52,17 @@ shared `App`. Nothing under `lsp/` knows about MCP.
 `W: AsyncWrite + Unpin + Send`, so the same code drives a spawned child's stdio in
 production and a `tokio::io::duplex` pair in tests.
 
-The crate also builds a test-only binary, `src/bin/fake-lsp-server.rs`, which the
-process-level CLI and MCP tests spawn in place of a real server: it serves the
-`initialize` handshake and a handful of canned requests so the whole adapter can
-be exercised without a real language server. It is a test fixture, not part of
-the adapter's runtime surface.
+The crate also carries a test surface that is not part of the adapter's runtime.
+`src/bin/fake-lsp-server.rs` is a test-only binary the process-level CLI and MCP
+tests spawn in place of a real server: it serves the `initialize` handshake and a
+handful of canned requests, so the whole adapter can be exercised without a real
+language server. `test-projects/` holds one small sample project per language —
+C/C++ (`clangd`), TypeScript/JavaScript (`typescript-language-server`), Rust
+(`rust-analyzer`), and Go (`gopls`) — and `tests/language_servers.rs` drives the
+real `lsp-mcp` against each project and its server when the server (and, for
+TypeScript and Go, the toolchain) is installed, skipping itself otherwise so the
+suite stays green where no server exists. Every process-level test shares the
+`McpClient` harness in `tests/common/mod.rs`.
 
 ## Data flow
 
@@ -155,12 +161,17 @@ returns a clear `isError` result naming the missing capability (e.g.
 `referencesProvider`) rather than sending a request that fails obscurely. This is
 requirement R20.
 
-`diagnostics` prefers **pull** (`textDocument/diagnostic`) when the server
-advertises `diagnosticProvider`, and otherwise reads the **push** cache: it records
-the file's current revision, opens the document (a server that publishes on
-`didOpen` emits a fresh report), awaits a newer revision under a bounded timeout,
-and falls back to whatever was already cached, reporting plainly when nothing has
-arrived. Both mechanisms are reported through the result's `mechanism` field.
+`diagnostics` reports the **union** of both LSP channels. When the server
+advertises `diagnosticProvider` it requests pull (`textDocument/diagnostic`) and
+_also_ reads the push cache: it records the file's current revision, opens the
+document (a server that publishes on `didOpen` emits a fresh report), awaits a
+newer revision under a bounded timeout, then merges the two de-duplicated — a
+diagnostic present on both channels appears once. Servers such as rust-analyzer
+answer pull with only their native diagnostics while delivering
+`cargo check`/clippy output solely through push, so choosing one channel would
+under-report. When the server does not advertise pull it reads the push cache
+alone, reporting plainly when nothing has arrived. The result's `mechanism` field
+names the channels that contributed: `"pull"`, `"publish"`, or `"pull+publish"`.
 
 ## The act/modify tools
 
