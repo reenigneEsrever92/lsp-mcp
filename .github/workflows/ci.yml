@@ -48,9 +48,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The runner ships a `rust-analyzer` rustup proxy even though the
+          # component is absent, so `which("rust-analyzer")` succeeds and the
+          # rust e2e test would launch a proxy that exits immediately (taking
+          # `lsp-mcp` down with it before the MCP handshake). Install the real
+          # component — plus clippy, which the repo's `rust-analyzer.toml`
+          # selects for checks — so the test runs against a working server.
+          components: rust-analyzer, clippy
       - uses: Swatinem/rust-cache@v2
-      # `language_servers.rs` skips a project when its real server is not on
-      # `PATH`, so the suite stays green on a runner with none installed.
+      # `language_servers.rs` skips a project whose real server is not on
+      # `PATH`, so the remaining server tests stay green here.
       - run: cargo test --all-targets --locked
 
   language-servers:
@@ -61,7 +69,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rust-analyzer
+          # rust-analyzer, plus clippy for the repo's `rust-analyzer.toml`
+          # check command.
+          components: rust-analyzer, clippy
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
