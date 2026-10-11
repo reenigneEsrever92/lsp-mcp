@@ -89,10 +89,15 @@ jobs:
           go install golang.org/x/tools/gopls@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Install typescript-language-server
+      - name: Install the TypeScript test project's dependencies
         run: |
-          npm install --global typescript typescript-language-server
+          # Install the versions the project pins (typescript ^5.5,
+          # typescript-language-server ^4.3) and expose its local bin on PATH —
+          # a global `npm install -g` instead pulls the latest
+          # typescript-language-server (6.x), which requires node >= 22 and dies
+          # at startup under this job's node 20.
           npm install --prefix test-projects/typescript
+          echo "$GITHUB_WORKSPACE/test-projects/typescript/node_modules/.bin" >> "$GITHUB_PATH"
 
       # Drives each `test-projects/` sample against its real server. Anything
       # that could not be installed above is skipped with a printed notice
