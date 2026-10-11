@@ -379,17 +379,19 @@ fn gopls_serves_the_go_project() {
         "expected `Greet` among {names:?}: {result}"
     );
 
-    // definition crosses packages: `greeter` in main.go resolves to greeter.go.
+    // definition crosses packages: the `New` selected by `greeter.New(...)`
+    // resolves to its declaration in greeter.go. (The bare `greeter` qualifier
+    // resolves to its import, so target the symbol it selects.)
     retry_call(
         &mut client,
         "definition",
-        json!({"file": main.to_string_lossy(), "line": 10, "column": 12}),
+        json!({"file": main.to_string_lossy(), "line": 10, "column": 20}),
         |result| {
             location_uris(result)
                 .iter()
                 .any(|uri| uri.ends_with("/greeter/greeter.go"))
         },
-        "definition of `greeter` must reach greeter.go",
+        "definition of `greeter.New` must reach greeter.go",
     );
 
     // hover renders the `Greet` signature.
