@@ -37,3 +37,4 @@ Each change request carries a `kind` and a `state`.
 | [Code-action tools](code-action-tools.md)                                    | feature     | medium   | done     |
 | [Write tools: rename and format](write-tools-rename-format.md)               | feature     | medium   | done     |
 | [Merge pushed diagnostics with pulled ones](merge-pushed-diagnostics.md)     | improvement | medium   | proposed |
+| [Advertise the working directory as the workspace root](workspace-root-from-cwd.md) | improvement | high     | done     |

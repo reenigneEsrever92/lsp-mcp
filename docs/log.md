@@ -3,6 +3,16 @@
 This log records how the `docs/` bundle itself evolves. Newest entries are
 prepended under their own `## YYYY-MM-DD` heading.
 
+## 2026-10-13
+
+- **Backlog**: Added
+  [Advertise the working directory as the workspace root](dev/backlog/workspace-root-from-cwd.md),
+  implemented it, and recorded it in the [changelog](dev/changelog.md).
+- **Architecture**: Noted in [`architecture.md`](architecture.md) that the
+  `initialize` handshake advertises the process working directory as the
+  workspace root (`workspaceFolders` and the legacy `rootUri`), and added
+  `java-lsp` to the real-server test surface.
+
 ## 2026-10-11
 
 - **Architecture**: Documented the real-server test surface in

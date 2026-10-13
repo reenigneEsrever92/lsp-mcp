@@ -14,10 +14,11 @@ use lsp_types::{
     RenameClientCapabilities, RenameParams, ResourceOperationKind, TextDocumentContentChangeEvent,
     TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
     VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEditClientCapabilities,
-    WorkspaceSymbolParams,
+    WorkspaceFolder, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::Path;
 
 /// The JSON-RPC version string used on every message.
 pub const JSONRPC_VERSION: &str = "2.0";
@@ -157,16 +158,31 @@ pub fn notification(method: impl Into<String>, params: Option<Value>) -> Notific
 }
 
 /// Build the `initialize` params the adapter sends during the handshake.
+///
+/// `root` is the workspace root to advertise — the adapter's process working
+/// directory. It is sent as `workspaceFolders` (the modern field) and as the
+/// deprecated `rootUri` (kept for servers that only read that field), so a
+/// server that indexes a project on handshake and does not fall back to its own
+/// working directory (such as `java-lsp`) finds a root. `None` advertises no
+/// workspace root, leaving project selection entirely to the server.
 #[allow(deprecated)]
-pub fn initialize_params(process_id: Option<u32>) -> InitializeParams {
+pub fn initialize_params(process_id: Option<u32>, root: Option<&Path>) -> InitializeParams {
+    let root_uri = root.and_then(|dir| super::path_to_uri(dir).ok());
+    let workspace_folders = match (root, &root_uri) {
+        (Some(dir), Some(uri)) => Some(vec![WorkspaceFolder {
+            name: workspace_folder_name(dir),
+            uri: uri.clone(),
+        }]),
+        _ => None,
+    };
     InitializeParams {
         process_id,
         root_path: None,
-        root_uri: None,
+        root_uri,
         initialization_options: None,
         capabilities: client_capabilities(),
         trace: None,
-        workspace_folders: None,
+        workspace_folders,
         client_info: Some(lsp_types::ClientInfo {
             name: "lsp-mcp".to_string(),
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -174,6 +190,14 @@ pub fn initialize_params(process_id: Option<u32>) -> InitializeParams {
         locale: None,
         work_done_progress_params: lsp_types::WorkDoneProgressParams::default(),
     }
+}
+
+/// The workspace folder's display name: the directory's final path segment, or
+/// its full path when there is none (for example the filesystem root).
+fn workspace_folder_name(dir: &Path) -> String {
+    dir.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| dir.to_string_lossy().into_owned())
 }
 
 /// Build the minimal client capabilities the adapter advertises during the
@@ -207,6 +231,7 @@ fn client_capabilities() -> lsp_types::ClientCapabilities {
                 ..Default::default()
             }),
             execute_command: Some(Default::default()),
+            workspace_folders: Some(true),
             ..Default::default()
         }),
         text_document: Some(lsp_types::TextDocumentClientCapabilities {
@@ -579,7 +604,7 @@ mod tests {
 
     #[test]
     fn initialize_params_advertise_the_read_tool_client_capabilities() {
-        let params = initialize_params(None);
+        let params = initialize_params(None, None);
         let value = serde_json::to_value(params).unwrap();
         let text_document = &value["capabilities"]["textDocument"];
         assert!(text_document["hover"].is_object());
@@ -588,6 +613,26 @@ mod tests {
         assert!(text_document["publishDiagnostics"].is_object());
         assert!(text_document["diagnostic"].is_object());
         assert!(value["capabilities"]["workspace"]["symbol"].is_object());
+    }
+
+    #[test]
+    fn initialize_params_advertise_the_workspace_root() {
+        let root = Path::new("/tmp/example-project");
+        let value = serde_json::to_value(initialize_params(None, Some(root))).unwrap();
+        assert_eq!(value["rootUri"], "file:///tmp/example-project");
+        assert_eq!(
+            value["workspaceFolders"][0]["uri"],
+            "file:///tmp/example-project"
+        );
+        assert_eq!(value["workspaceFolders"][0]["name"], "example-project");
+        assert_eq!(value["capabilities"]["workspace"]["workspaceFolders"], true);
+    }
+
+    #[test]
+    fn initialize_params_without_a_root_advertise_none() {
+        let value = serde_json::to_value(initialize_params(None, None)).unwrap();
+        assert!(value["rootUri"].is_null());
+        assert!(value["workspaceFolders"].is_null());
     }
 
     #[test]
@@ -636,7 +681,7 @@ mod tests {
 
     #[test]
     fn initialize_params_advertise_the_code_action_client_capabilities() {
-        let params = initialize_params(None);
+        let params = initialize_params(None, None);
         let value = serde_json::to_value(params).unwrap();
         let capabilities = &value["capabilities"];
         let code_action = &capabilities["textDocument"]["codeAction"];
@@ -696,7 +741,7 @@ mod tests {
 
     #[test]
     fn initialize_params_advertise_the_write_tool_client_capabilities() {
-        let params = initialize_params(None);
+        let params = initialize_params(None, None);
         let value = serde_json::to_value(params).unwrap();
         let text_document = &value["capabilities"]["textDocument"];
         assert_eq!(text_document["rename"]["prepareSupport"], true);

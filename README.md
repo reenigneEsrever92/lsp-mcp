@@ -98,15 +98,20 @@ argument. For example, in a typical `mcpServers` configuration:
 }
 ```
 
-Run one `lsp-mcp` process per language server. The adapter is the bridge; it does
-not itself decide which files or projects are relevant — the server does.
+Run one `lsp-mcp` process per language server, started from the project you want
+indexed — it advertises that working directory as the workspace root. The adapter
+is the bridge; the server still decides which files are relevant.
 
 ## How it works
 
 `lsp-mcp` launches the LSP server, speaks the LSP client protocol to it over the
 child process's stdio (`Content-Length` framing, the `initialize` handshake,
 per-request timeouts, and on-demand document sync), and exposes that server to an
-MCP client over its own stdio as the tools above.
+MCP client over its own stdio as the tools above. The handshake advertises the
+adapter's process working directory as the workspace root (`workspaceFolders` and
+the legacy `rootUri`), so a server that indexes a project on start-up — including
+one that does not fall back to its own working directory, such as `java-lsp` —
+finds it.
 
 ```mermaid
 flowchart LR
@@ -145,13 +150,13 @@ adapter can be exercised without installing one.
 ### Test projects
 
 [`test-projects/`](test-projects/README.md) holds small sample projects for
-**C/C++**, **TypeScript/JavaScript**, **Rust**, and **Go**. Point `lsp-mcp` at
-the relevant real language server (`clangd`, `typescript-language-server`,
-`rust-analyzer`, or `gopls`) from inside one of these projects to try the tools
-end-to-end — each has cross-file references, documented symbols, and one
-deliberate diagnostic. `cargo test --test language_servers` does the same
-automatically: it drives each project against its server when the server is
-installed and skips the ones that are not.
+**C/C++**, **TypeScript/JavaScript**, **Rust**, **Go**, and **Java**. Point
+`lsp-mcp` at the relevant real language server (`clangd`,
+`typescript-language-server`, `rust-analyzer`, `gopls`, or `java-lsp`) from
+inside one of these projects to try the tools end-to-end — each has cross-file
+references, documented symbols, and one deliberate diagnostic. `cargo test --test
+language_servers` does the same automatically: it drives each project against its
+server when the server is installed and skips the ones that are not.
 
 ## License
 

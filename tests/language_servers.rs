@@ -175,6 +175,14 @@ fn test_projects_are_present() {
         ),
         ("rust", &["Cargo.toml", "src/lib.rs", "src/main.rs"]),
         ("go", &["go.mod", "main.go", "greeter/greeter.go"]),
+        (
+            "java",
+            &[
+                "pom.xml",
+                "src/main/java/com/example/greeting/Person.java",
+                "src/main/java/com/example/greeting/Main.java",
+            ],
+        ),
     ];
     for (name, files) in expected {
         let root = project(name);
@@ -488,4 +496,57 @@ fn clangd_serves_the_c_cpp_project() {
     diagnostics_containing(&mut client, &main, "unused");
 
     assert_clean_exit(client, "clangd");
+}
+
+#[test]
+fn java_lsp_serves_the_java_project() {
+    let test = "java_lsp_serves_the_java_project";
+    let Some(server) = server_or_skip("java-lsp", test) else {
+        return;
+    };
+    let root = project("java");
+    let person = root.join("src/main/java/com/example/greeting/Person.java");
+    let main = root.join("src/main/java/com/example/greeting/Main.java");
+
+    let mut client = McpClient::spawn_with(&server, &[], Some(&root));
+    client.initialize();
+
+    // `java-lsp` only indexes a workspace when the client advertises a root, so a
+    // green run below also covers the adapter advertising its working directory
+    // as the root; without that its index is empty and both tools return nothing.
+
+    // definition crosses files: `Person` in Main.java resolves to Person.java.
+    retry_call(
+        &mut client,
+        "definition",
+        json!({"file": main.to_string_lossy(), "line": 8, "column": 9}),
+        |result| {
+            location_uris(result)
+                .iter()
+                .any(|uri| uri.ends_with("/Person.java"))
+        },
+        "definition of `Person` must reach Person.java",
+    );
+
+    // references span both files.
+    retry_call(
+        &mut client,
+        "references",
+        json!({
+            "file": person.to_string_lossy(),
+            "line": 6,
+            "column": 14,
+            "include_declaration": true
+        }),
+        |result| {
+            let uris = location_uris(result);
+            uris.iter().any(|uri| uri.ends_with("/Person.java"))
+                && uris.iter().any(|uri| uri.ends_with("/Main.java"))
+        },
+        "references to `Person` must span Person.java and Main.java",
+    );
+
+    // `java-lsp` advertises only navigation and completion today, so the other
+    // tools are out of scope here; that gap lives in java-lsp, not the adapter.
+    assert_clean_exit(client, "java-lsp");
 }

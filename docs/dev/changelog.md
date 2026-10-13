@@ -10,6 +10,17 @@ status: active
 
 Shipped changes are listed newest first under dated headings.
 
+## 2026-10-13
+
+- **Advertise the working directory as the workspace root** — the adapter now
+  sends its process working directory in the LSP `initialize` handshake as
+  `workspaceFolders` and the legacy `rootUri` (and advertises the
+  `workspace.workspaceFolders` client capability), so a server that indexes a
+  project on start-up — including one that does not fall back to its own working
+  directory, such as `java-lsp` — finds it. Adds a Java sample project and a
+  `java-lsp` real-server test. See
+  [Advertise the working directory as the workspace root](backlog/workspace-root-from-cwd.md).
+
 ## 2026-10-11
 
 - **Merge pushed diagnostics with pulled ones** — the `diagnostics` tool now returns the de-duplicated union of the pull report (`textDocument/diagnostic`) and the push cache (`textDocument/publishDiagnostics`), reporting `mechanism` as `"pull"`, `"publish"`, or `"pull+publish"` from the channels that contributed. See

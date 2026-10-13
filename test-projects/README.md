@@ -18,14 +18,17 @@ the rest.
 | `typescript/` | TypeScript + JavaScript  | `typescript-language-server` |
 | `rust/`       | Rust                     | `rust-analyzer`              |
 | `go/`         | Go                       | `gopls`                      |
+| `java/`       | Java                     | `java-lsp`                   |
 
 ## Running a project with `lsp-mcp`
 
-`lsp-mcp` does not tell the language server which project to open — it forwards
-your MCP client's requests and lets the server decide. Real servers fall back to
-their **process working directory** when the client sends no root, so start
-`lsp-mcp` from inside the project you want it to index and pass **absolute**
-file paths to the tools.
+`lsp-mcp` advertises its **process working directory** as the workspace root in
+the LSP `initialize` handshake — both `workspaceFolders` and the legacy `rootUri`
+— then forwards your MCP client's requests and lets the server decide what to
+index. Servers that index a project on start-up find it, including ones that do
+not fall back to their own working directory (such as `java-lsp`). Start `lsp-mcp`
+from inside the project you want indexed and pass **absolute** file paths to the
+tools.
 
 For example, to drive the Rust project:
 
@@ -48,6 +51,7 @@ dependencies, or configuring the language server where needed).
 | `typescript` | `lsp-mcp typescript-language-server -- --stdio` |
 | `rust`       | `lsp-mcp rust-analyzer`                         |
 | `go`         | `lsp-mcp gopls`                                 |
+| `java`       | `lsp-mcp java-lsp`                              |
 
 ## What to try
 
@@ -71,3 +75,8 @@ clean, compiling project. Note that in the **TypeScript** and **Go** projects th
 deliberate issue is a type/compile error, so `tsc --noEmit` and `go build` fail
 until it is removed — that is intentional, and the language servers still
 offer hover, navigation, and quick fixes for the rest of the file.
+
+`java-lsp` is earlier in its development than the other servers: it advertises
+navigation and completion only, so the **Java** project answers `definition` and
+`references` but returns a clear "does not advertise …" error for the rest until
+it grows those capabilities.

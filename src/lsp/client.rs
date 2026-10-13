@@ -196,7 +196,8 @@ impl Client<ChildStdout, ChildStdin> {
         let mut client = client;
         client._child = Some(child);
 
-        let params = message::initialize_params(Some(std::process::id()));
+        let root = std::env::current_dir().ok();
+        let params = message::initialize_params(Some(std::process::id()), root.as_deref());
         client.initialize(params).await?;
         client.initialized().await?;
         Ok(client)
@@ -503,7 +504,7 @@ mod tests {
 
     async fn handshake(client: &Client<DuplexStream, DuplexStream>) {
         client
-            .initialize(message::initialize_params(Some(1)))
+            .initialize(message::initialize_params(Some(1), None))
             .await
             .unwrap();
         client.initialized().await.unwrap();
@@ -513,7 +514,7 @@ mod tests {
     async fn handshake_captures_server_capabilities() {
         let client = connected(Duration::from_secs(2));
         let result = client
-            .initialize(message::initialize_params(Some(1)))
+            .initialize(message::initialize_params(Some(1), None))
             .await
             .unwrap();
         assert_eq!(
